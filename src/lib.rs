@@ -11,18 +11,24 @@ struct Worker {
 type Job = Box<dyn FnOnce() + Send + 'static>;
 pub struct ThreadPool {
     workers: Vec<Worker>,
-    sender: mpsc::Sender<Job>,
+    sender: Option<mpsc::Sender<Job>>,
 }
 
 impl Worker {
     fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
         let thread = thread::spawn(move || loop {
             // recv() will block until a job becomes available
-            let job = receiver.lock().unwrap().recv().unwrap();
+            match receiver.lock().unwrap().recv() {
+                Ok(job) => {
+                    println!("Worker {id} got a job, executing now.");
 
-            println!("Worker {id} got a job, executing now.");
-
-            job();
+                    job();
+                }
+                Err(_) => {
+                    println!("Worker {id} disconnected from the channel, shutting down now.");
+                    break;
+                }
+            }
         });
 
         Worker {
@@ -59,7 +65,10 @@ impl ThreadPool {
             workers.push(Worker::new(id, Arc::clone(&receiver)));
         }
 
-        ThreadPool { workers, sender }
+        ThreadPool {
+            workers,
+            sender: Some(sender),
+        }
     }
 
     // Send-trait to transfer the closure from one thread to another
@@ -71,12 +80,14 @@ impl ThreadPool {
     {
         let job = Box::new(f);
 
-        self.sender.send(job).unwrap();
+        self.sender.as_ref().unwrap().send(job).unwrap();
     }
 }
 
 impl Drop for ThreadPool {
     fn drop(&mut self) {
+        drop(self.sender.take());
+
         for worker in &mut self.workers {
             println!("Shutting down worker {}", worker.id);
 
