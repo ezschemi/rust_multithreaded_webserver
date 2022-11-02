@@ -6,6 +6,10 @@ use std::{
     time::Duration,
 };
 
+use rust_multithreaded_webserver::ThreadPool;
+
+const MAX_THREADS: usize = 4;
+
 // HTTP Request Format:
 // Method Request-URI HTTP-Version CRLF
 // headers CRLF
@@ -50,13 +54,17 @@ fn main() {
     println!("Listening on {}", address_and_port);
     let listener = TcpListener::bind(address_and_port).unwrap();
 
+    println!("Using {MAX_THREADS} threads.");
+    let thread_pool = ThreadPool::new(MAX_THREADS);
+
     for stream in listener.incoming() {
         let stream = stream.unwrap();
 
         println!("Connection established.");
 
-        handle_connection(stream);
-
+        thread_pool.execute(|| {
+            handle_connection(stream);
+        });
         // stream will close the connection when it goes out of scope
     }
 }
