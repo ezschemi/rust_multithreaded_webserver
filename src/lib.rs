@@ -5,7 +5,7 @@ use std::thread::{self, JoinHandle};
 
 struct Worker {
     id: usize,
-    thread: JoinHandle<()>,
+    thread: Option<JoinHandle<()>>,
 }
 
 type Job = Box<dyn FnOnce() + Send + 'static>;
@@ -25,7 +25,10 @@ impl Worker {
             job();
         });
 
-        Worker { id, thread }
+        Worker {
+            id,
+            thread: Some(thread),
+        }
     }
 }
 
@@ -69,5 +72,17 @@ impl ThreadPool {
         let job = Box::new(f);
 
         self.sender.send(job).unwrap();
+    }
+}
+
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
+        for worker in &mut self.workers {
+            println!("Shutting down worker {}", worker.id);
+
+            if let Some(thread) = worker.thread.take() {
+                thread.join().unwrap();
+            }
+        }
     }
 }
